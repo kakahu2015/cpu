@@ -1,4 +1,4 @@
-name: Build Release
+name: Build ARM Release
 
 on:
   workflow_dispatch:
