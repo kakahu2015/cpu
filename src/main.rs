@@ -2,6 +2,7 @@ use std::fs;
 use std::thread;
 use std::time::{Duration, Instant};
 use serde::{Deserialize, Serialize};
+use openssl::version;
 
 #[derive(Debug, Serialize, Deserialize)]
 struct Config {
@@ -9,6 +10,9 @@ struct Config {
 }
 
 fn main() {
+    // 打印 OpenSSL 版本信息，验证链接成功
+    println!("OpenSSL version: {}", version::version());
+    
     // 读取配置文件
     let config_content = fs::read_to_string("config.yml")
         .expect("无法读取配置文件");
