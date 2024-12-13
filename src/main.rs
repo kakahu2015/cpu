@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use num_cpus;
 use chrono::{Local, NaiveTime, Datelike, NaiveDate, Weekday};
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]  // 添加 Clone
 struct Config {
     work_days: Vec<String>,      // 指定工作日列表 格式："2025-01-01"
     rest_days: Vec<String>,      // 指定休息日列表 格式："2025-01-01"
