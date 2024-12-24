@@ -1,2 +1,10 @@
-openai:
-  api_key: "xxx"
+work_days:
+#  - "2024-12-15"  # 示例：指定某些日期为工作日
+#  - "2024-12-14"
+rest_days:
+#  - "2024-12-13"  # 示例：元旦假期
+#  - "2024-12-16"
+work_start_time: "09:00"
+work_end_time: "18:00"
+work_cpu_usage: 30.0
+rest_cpu_usage: 10.0
