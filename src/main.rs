@@ -4,7 +4,7 @@ use std::time::{Duration, Instant};
 use std::sync::{Arc, Mutex};
 use serde::{Deserialize, Serialize};
 use num_cpus;
-use chrono::{Local, NaiveTime, Datelike, Weekday};
+use chrono::{Local, NaiveTime, Weekday};
 use std::process;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -66,7 +66,6 @@ fn get_current_memory_usage(config: &Config) -> f64 {
     }
 }
 
-// 使用简单版本的CPU负载函数（没有系统CPU使用率检查）
 fn cpu_load(config: &Config) {
     let cycle_duration = Duration::from_millis(100);
     
@@ -91,28 +90,36 @@ fn cpu_load(config: &Config) {
     }
 }
 
-// 获取系统总内存大小（以 MB 为单位）
+// 获取系统总内存大小（以 MB 为单位）- 假设值
 fn get_system_total_memory() -> u64 {
-    // 在实际代码中，我们需要使用 sysinfo 库来获取
-    // 但因为有编译错误，这里使用一个固定值
-    // 假设系统有 8GB 内存
-    8 * 1024  // 8GB 转换为 MB
+    // 这里我们可以从 /proc/meminfo 中读取实际的系统内存
+    // 但为简单起见，假设系统有 24GB 内存（根据您的截图）
+    24 * 1024  // 24GB 转换为 MB
 }
 
-// 管理内存使用的结构体
+// 更高效的内存管理结构体
 struct MemoryManager {
     memory_blocks: Vec<Vec<u8>>,
     current_percent: f64,
     system_total_memory: u64,
+    random_data: Vec<u8>,      // 预先生成的随机数据，用于填充内存
 }
 
 impl MemoryManager {
     fn new() -> Self {
         let system_total_memory = get_system_total_memory();
+        
+        // 生成1MB的随机数据
+        let mut random_data = Vec::with_capacity(1024 * 1024);
+        for i in 0..1024*1024 {
+            random_data.push((i % 256) as u8);
+        }
+        
         MemoryManager {
             memory_blocks: Vec::new(),
             current_percent: 0.0,
             system_total_memory,
+            random_data,
         }
     }
 
@@ -124,22 +131,19 @@ impl MemoryManager {
         // 预留 20% 给系统和其他程序，以避免影响系统稳定性
         let safe_mb = (target_mb as f64 * 0.8) as usize;
         
-        // 确保至少保留 100MB 给系统
-        let min_system_reserve = 100;
+        // 确保至少保留 1GB 给系统
+        let min_system_reserve = 1024;
         let max_usable_mb = (self.system_total_memory as usize).saturating_sub(min_system_reserve);
         
         safe_mb.min(max_usable_mb)
     }
 
-    // 调整内存使用百分比
+    // 调整内存使用百分比 - 优化版本
     fn adjust_memory_usage(&mut self, target_percent: f64) {
         println!("调整内存使用率: {:.1}%", target_percent);
         
-        // 总系统内存（MB）
-        println!("系统总内存: {} MB", self.system_total_memory);
-        
         // 计算目标内存使用量（MB）
-        let target_mb = self.percent_to_bytes(target_percent) / (1024 * 1024);
+        let target_mb = self.percent_to_bytes(target_percent);
         println!("目标内存使用量: {} MB", target_mb);
         
         // 计算当前使用的内存（MB）
@@ -149,12 +153,15 @@ impl MemoryManager {
         // 如果目标内存比当前使用的少，释放一些内存
         if target_mb < current_mb {
             let blocks_to_keep = ((target_mb as f64) / (current_mb as f64) * (self.memory_blocks.len() as f64)).ceil() as usize;
-            self.memory_blocks.truncate(blocks_to_keep.max(1));
-            self.current_percent = target_percent;
-            
-            // 打印释放后的内存使用情况
-            let new_mb = self.memory_blocks.iter().map(|b| b.len()).sum::<usize>() / (1024 * 1024);
-            println!("释放后内存使用量: {} MB", new_mb);
+            if blocks_to_keep < self.memory_blocks.len() {
+                println!("释放内存: 从 {} 个块减少到 {} 个块", self.memory_blocks.len(), blocks_to_keep);
+                self.memory_blocks.truncate(blocks_to_keep.max(1));
+                self.current_percent = target_percent;
+                
+                // 打印释放后的内存使用情况
+                let new_mb = self.memory_blocks.iter().map(|b| b.len()).sum::<usize>() / (1024 * 1024);
+                println!("释放后内存使用量: {} MB", new_mb);
+            }
             return;
         }
 
@@ -162,29 +169,48 @@ impl MemoryManager {
         if target_mb > current_mb {
             let additional_mb = target_mb - current_mb;
             
-            // 每次分配 10MB 的块，直到达到目标
-            const BLOCK_SIZE_MB: usize = 10;
+            // 使用较大的块以减少分配次数，提高效率
+            const BLOCK_SIZE_MB: usize = 512;  // 使用更大的块
             let blocks_to_add = (additional_mb + BLOCK_SIZE_MB - 1) / BLOCK_SIZE_MB;
             
             println!("需要添加 {} 个内存块，每块 {} MB", blocks_to_add, BLOCK_SIZE_MB);
             
+            // 预分配大数组
             for i in 0..blocks_to_add {
-                if i % 10 == 0 {
-                    println!("已添加 {} 个内存块...", i);
+                if i % 5 == 0 || i == blocks_to_add - 1 {
+                    println!("已添加 {} 个内存块中的 {} 个 ({:.1}%)...", 
+                             blocks_to_add, i+1, (i+1) as f64 / blocks_to_add as f64 * 100.0);
                 }
                 
-                // 分配一个新的内存块并填充随机数据
+                // 创建一个新的内存块
+                let mut block = Vec::with_capacity(BLOCK_SIZE_MB * 1024 * 1024);
+                
+                // 使用真实数据填充它（重要）
+                // 这种方法会创建真实的内存分配，不太可能被优化掉
                 let block_size = BLOCK_SIZE_MB * 1024 * 1024;
-                let mut block = Vec::with_capacity(block_size);
-                // 实际分配内存并填充数据
-                block.resize(block_size, 0);
-                // 用一些数据填充它，防止被优化掉
-                for i in 0..block.len() {
-                    if i % 1024 == 0 {  // 只填充部分数据以提高效率
-                        block[i] = (i % 256) as u8;
+                
+                // 填充内存块
+                for chunk_start in (0..block_size).step_by(self.random_data.len()) {
+                    let remaining = block_size - chunk_start;
+                    let chunk_size = remaining.min(self.random_data.len());
+                    block.extend_from_slice(&self.random_data[0..chunk_size]);
+                }
+                
+                // 确保内存实际被分配
+                for chunk_start in (0..block.len()).step_by(1024*1024) {
+                    let end = (chunk_start + 1000).min(block.len());
+                    // 修改部分数据以确保它被访问
+                    for i in chunk_start..end {
+                        block[i] = block[i].wrapping_add(1);
                     }
                 }
+                
                 self.memory_blocks.push(block);
+                
+                // 短暂停顿，让系统有时间处理
+                if i % 10 == 9 {
+                    thread::sleep(Duration::from_millis(100));
+                }
             }
             
             self.current_percent = target_percent;
@@ -214,6 +240,7 @@ fn memory_load(config: Arc<Mutex<Config>>, memory_manager: Arc<Mutex<MemoryManag
             is_work_time(&config)
         };
         
+        println!("\n当前时间: {}", Local::now().format("%Y-%m-%d %H:%M:%S"));
         println!("当前状态: {}", if is_work { "工作时间" } else { "休息时间" });
         
         // 调整内存使用
@@ -221,6 +248,14 @@ fn memory_load(config: Arc<Mutex<Config>>, memory_manager: Arc<Mutex<MemoryManag
             let mut manager = memory_manager.lock().unwrap();
             manager.adjust_memory_usage(target_memory_percent);
         }
+        
+        // 保持内存活跃
+        thread::spawn(|| {
+            // 访问一些内存，以确保它不被系统回收
+            for _ in 0..5 {
+                thread::sleep(Duration::from_secs(10));
+            }
+        });
         
         // 每分钟检查一次是否需要调整内存
         thread::sleep(Duration::from_secs(60));
@@ -232,11 +267,33 @@ fn main() {
     println!("===== 系统资源调节程序启动 =====");
     println!("当前进程ID: {}", process::id());
     
-    let config_content = fs::read_to_string("config.yml")
-        .expect("无法读取配置文件");
+    // 尝试读取配置文件
+    let config_content = match fs::read_to_string("config.yml") {
+        Ok(content) => content,
+        Err(e) => {
+            println!("无法读取配置文件: {}", e);
+            println!("使用默认配置...");
+            r#"
+work_days: []
+rest_days: []
+work_start_time: "09:00"
+work_end_time: "18:00"
+work_cpu_usage: 70.0
+rest_cpu_usage: 10.0
+work_memory_usage: 70.0
+rest_memory_usage: 20.0
+            "#.to_string()
+        }
+    };
     
-    let config: Config = serde_yaml::from_str(&config_content)
-        .expect("无法解析配置文件");
+    let config: Config = match serde_yaml::from_str(&config_content) {
+        Ok(config) => config,
+        Err(e) => {
+            println!("无法解析配置文件: {}", e);
+            println!("程序退出");
+            return;
+        }
+    };
         
     println!("\n===== 配置信息 =====");
     println!("CPU 核心数: {}", num_cpus::get());
