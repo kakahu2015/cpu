@@ -250,10 +250,17 @@ fn memory_load(config: Arc<Mutex<Config>>, memory_manager: Arc<Mutex<MemoryManag
             manager.adjust_memory_usage(target_memory_percent);
         }
         
-        // 保持内存活跃
-        thread::spawn(|| {
-            // 访问一些内存，以确保它不被系统回收
+        // 保持内存活跃，定期访问已分配的内存
+        let mgr_clone = Arc::clone(&memory_manager);
+        thread::spawn(move || {
             for _ in 0..5 {
+                {
+                    let manager = mgr_clone.lock().unwrap();
+                    for block in &manager.memory_blocks {
+                        // 访问每个内存块的部分数据，避免被优化掉
+                        std::hint::black_box(block.get(0));
+                    }
+                }
                 thread::sleep(Duration::from_secs(10));
             }
         });
