@@ -124,7 +124,7 @@ impl MemoryManager {
         }
     }
 
-    // 将百分比转换为字节数
+    // 将内存占用百分比转换为 MB（返回值为 MB，可考虑更名）
     fn percent_to_bytes(&self, percent: f64) -> usize {
         // 计算目标内存字节数（百分比 * 总内存）
         let target_mb = (self.system_total_memory as f64 * percent / 100.0) as usize;
@@ -250,6 +250,7 @@ fn memory_load(config: Arc<Mutex<Config>>, memory_manager: Arc<Mutex<MemoryManag
             manager.adjust_memory_usage(target_memory_percent);
         }
         
+
         // 保持内存活跃
         let mm_for_thread = Arc::clone(&memory_manager);
         thread::spawn(move || {
@@ -265,6 +266,7 @@ fn memory_load(config: Arc<Mutex<Config>>, memory_manager: Arc<Mutex<MemoryManag
                     }
                 }
                 // 周期性地访问，防止长时间闲置
+
                 thread::sleep(Duration::from_secs(10));
             }
         });
