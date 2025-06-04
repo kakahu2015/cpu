@@ -31,8 +31,11 @@ fn parse_time(time_str: &str) -> Result<NaiveTime, String> {
 fn is_work_time(config: &Config) -> bool {
     let now = Local::now();
     let current_time = now.time();
-    let work_start = parse_time(&config.work_start_time);
-    let work_end = parse_time(&config.work_end_time);
+    // `parse_time` 已在 main 中校验过，这里直接解包即可
+    let work_start = parse_time(&config.work_start_time)
+        .expect("invalid work_start_time");
+    let work_end = parse_time(&config.work_end_time)
+        .expect("invalid work_end_time");
     
     // 检查当前日期是否在特定工作日列表中
     let current_date = now.format("%Y-%m-%d").to_string();
@@ -306,7 +309,7 @@ fn memory_load(config: Arc<Mutex<Config>>, memory_manager: Arc<Mutex<MemoryManag
     }
 }
 
-fn main() {
+fn main() -> Result<(), String> {
     // 打印开始信息
     println!("===== 系统资源调节程序启动 =====");
     println!("当前进程ID: {}", process::id());
@@ -345,12 +348,12 @@ rest_memory_usage: 20.0
             .map_err(|e| format!("work_start_time {}", e))?;
         parse_time(&config.work_end_time)
             .map_err(|e| format!("work_end_time {}", e))?;
-        
+
         config
     }
     Err(e) => {
         println!("配置文件错误: {}", e);
-        return;
+        return Err(format!("配置文件错误: {}", e));
     }
 };
         
@@ -412,4 +415,6 @@ rest_memory_usage: 20.0
     for handle in handles {
         handle.join().unwrap();
     }
+
+    Ok(())
 }
