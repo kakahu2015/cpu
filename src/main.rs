@@ -36,11 +36,19 @@ fn is_work_time(config: &Config) -> bool {
         .expect("invalid work_start_time");
     let work_end = parse_time(&config.work_end_time)
         .expect("invalid work_end_time");
+
+    // 处理跨日班次：若结束时间早于开始时间，说明工作段跨越午夜，
+    // 判断逻辑为 current_time >= work_start || current_time < work_end
+    let in_time_range = if work_end >= work_start {
+        current_time >= work_start && current_time < work_end
+    } else {
+        current_time >= work_start || current_time < work_end
+    };
     
     // 检查当前日期是否在特定工作日列表中
     let current_date = now.format("%Y-%m-%d").to_string();
     if config.work_days.contains(&current_date) {
-        return current_time >= work_start && current_time < work_end;
+        return in_time_range;
     }
     
     // 检查是否在特定休息日列表中
@@ -55,7 +63,7 @@ fn is_work_time(config: &Config) -> bool {
         _ => false,
     };
     
-    is_weekday && current_time >= work_start && current_time < work_end
+    is_weekday && in_time_range
 }
 
 fn get_current_cpu_usage(config: &Config) -> f64 {
