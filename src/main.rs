@@ -18,6 +18,10 @@ struct Config {
     rest_cpu_usage: f64,         // 休息时间 CPU 使用率（百分比）
     work_memory_usage: f64,      // 工作时间内存使用率（百分比）
     rest_memory_usage: f64,      // 休息时间内存使用率（百分比）
+    #[serde(skip)]
+    work_start: NaiveTime,       // 解析后的工作开始时间
+    #[serde(skip)]
+    work_end: NaiveTime,         // 解析后的工作结束时间
 }
 
 /*fn parse_time(time_str: &str) -> NaiveTime {
@@ -41,11 +45,9 @@ fn clamp_percent(value: &mut f64, name: &str) {
 fn is_work_time(config: &Config) -> bool {
     let now = Local::now();
     let current_time = now.time();
-    // `parse_time` 已在 main 中校验过，这里直接解包即可
-    let work_start = parse_time(&config.work_start_time)
-        .expect("invalid work_start_time");
-    let work_end = parse_time(&config.work_end_time)
-        .expect("invalid work_end_time");
+    // 直接使用解析后的时间
+    let work_start = config.work_start;
+    let work_end = config.work_end;
 
     // 处理跨日班次：若结束时间早于开始时间，说明工作段跨越午夜，
     // 判断逻辑为 current_time >= work_start || current_time < work_end
@@ -375,11 +377,11 @@ rest_memory_usage: 20.0
         }
     };*/
    let config: Config = match serde_yaml::from_str::<Config>(&config_content) {
-    Ok(config) => {
-        // 校验时间格式
-        parse_time(&config.work_start_time)
+    Ok(mut config) => {
+        // 校验时间格式并存储解析结果
+        config.work_start = parse_time(&config.work_start_time)
             .map_err(|e| format!("work_start_time {}", e))?;
-        parse_time(&config.work_end_time)
+        config.work_end = parse_time(&config.work_end_time)
             .map_err(|e| format!("work_end_time {}", e))?;
 
         clamp_percent(&mut config.work_cpu_usage, "work_cpu_usage");
