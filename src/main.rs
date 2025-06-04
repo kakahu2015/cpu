@@ -251,9 +251,20 @@ fn memory_load(config: Arc<Mutex<Config>>, memory_manager: Arc<Mutex<MemoryManag
         }
         
         // 保持内存活跃
-        thread::spawn(|| {
-            // 访问一些内存，以确保它不被系统回收
-            for _ in 0..5 {
+        let mm_for_thread = Arc::clone(&memory_manager);
+        thread::spawn(move || {
+            loop {
+                {
+                    let mut manager = mm_for_thread.lock().unwrap();
+                    for block in manager.memory_blocks.iter_mut() {
+                        if !block.is_empty() {
+                            // 修改首字节并读取部分数据，防止内存被回收
+                            block[0] = block[0].wrapping_add(1);
+                            let _ = block[0];
+                        }
+                    }
+                }
+                // 周期性地访问，防止长时间闲置
                 thread::sleep(Duration::from_secs(10));
             }
         });
