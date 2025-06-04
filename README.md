@@ -14,6 +14,7 @@ This project is a CPU load simulator that adjusts the CPU usage based on the con
    ```bash
    git clone https://github.com/kakahu2015/cpu.git
    cd cpu
+   ```
 
 ## Build the executable：
    cargo build --release
