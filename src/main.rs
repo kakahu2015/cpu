@@ -156,7 +156,15 @@ impl MemoryManager {
     }
 
     // 将内存占用百分比转换为 MB（返回值为 MB，可考虑更名）
-    fn percent_to_mb(&self, percent: f64) -> usize {
+    fn percent_to_mb(&self, mut percent: f64) -> usize {
+        if percent < 0.0 {
+            eprintln!("警告: 内存使用率 {:.1}% 小于 0，已截断为 0", percent);
+            percent = 0.0;
+        } else if percent > 100.0 {
+            eprintln!("警告: 内存使用率 {:.1}% 大于 100，已截断为 100", percent);
+            percent = 100.0;
+        }
+
         // 计算目标内存字节数（百分比 * 总内存）
         let target_mb = (self.system_total_memory as f64 * percent / 100.0) as usize;
         
@@ -424,4 +432,22 @@ rest_memory_usage: 20.0
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn percent_to_mb_negative() {
+        let mm = MemoryManager::new();
+        assert_eq!(mm.percent_to_mb(-10.0), 0);
+    }
+
+    #[test]
+    fn percent_to_mb_above_hundred() {
+        let mm = MemoryManager::new();
+        let expected = mm.percent_to_mb(100.0);
+        assert_eq!(mm.percent_to_mb(150.0), expected);
+    }
 }
