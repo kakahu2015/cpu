@@ -92,11 +92,35 @@ fn cpu_load(config: &Config) {
 }
 
 // 获取系统总内存大小（以 MB 为单位）- 假设值
-fn get_system_total_memory() -> u64 {
+/*fn get_system_total_memory() -> u64 {
     // 这里我们可以从 /proc/meminfo 中读取实际的系统内存
     // 但为简单起见，假设系统有 24GB 内存（根据您的截图）
     24 * 1024  // 24GB 转换为 MB
+}*/
+
+// 简洁且高效的 Linux 版本
+fn get_system_total_memory() -> u64 {
+    use std::sync::OnceLock;
+    static MEMORY_MB: OnceLock<u64> = OnceLock::new();
+    
+    *MEMORY_MB.get_or_init(|| {
+        std::fs::read_to_string("/proc/meminfo")
+            .ok()
+            .and_then(|content| {
+                content.lines()
+                    .find(|line| line.starts_with("MemTotal:"))
+                    .and_then(|line| line.split_whitespace().nth(1))
+                    .and_then(|kb| kb.parse::<u64>().ok())
+                    .map(|kb| kb / 1024) // 转换为 MB
+            })
+            .unwrap_or_else(|| {
+                eprintln!("警告: 无法读取系统内存，使用默认值 24GB");
+                24 * 1024
+            })
+    })
 }
+    
+    
 
 // 更高效的内存管理结构体
 struct MemoryManager {
