@@ -124,7 +124,7 @@ impl MemoryManager {
         }
     }
 
-    // 将百分比转换为字节数
+    // 将内存占用百分比转换为 MB（返回值为 MB，可考虑更名）
     fn percent_to_bytes(&self, percent: f64) -> usize {
         // 计算目标内存字节数（百分比 * 总内存）
         let target_mb = (self.system_total_memory as f64 * percent / 100.0) as usize;
