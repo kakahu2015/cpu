@@ -227,6 +227,27 @@ fn memory_load(config: Arc<Mutex<Config>>, memory_manager: Arc<Mutex<MemoryManag
     // 获取进程ID用于日志记录
     let pid = process::id();
     println!("内存管理线程启动，进程ID: {}", pid);
+
+    // 启动一个独立线程（只创建一次），周期性访问已分配的内存，防止其被系统回收
+    // 通过 Arc<Mutex<MemoryManager>> 共享内存管理器
+    let mm_for_keep_alive = Arc::clone(&memory_manager);
+    thread::spawn(move || {
+        println!("内存保持活跃线程已启动");
+        loop {
+            {
+                let mut manager = mm_for_keep_alive.lock().unwrap();
+                for block in manager.memory_blocks.iter_mut() {
+                    if !block.is_empty() {
+                        // 修改首字节并读取部分数据以保持活跃
+                        block[0] = block[0].wrapping_add(1);
+                        let _ = block[0];
+                    }
+                }
+            }
+            // 每10秒访问一次内存
+            thread::sleep(Duration::from_secs(10));
+        }
+    });
     
     loop {
         // 获取当前应该使用的内存百分比
@@ -251,26 +272,6 @@ fn memory_load(config: Arc<Mutex<Config>>, memory_manager: Arc<Mutex<MemoryManag
         }
         
 
-        // 保持内存活跃
-        let mm_for_thread = Arc::clone(&memory_manager);
-        thread::spawn(move || {
-            loop {
-                {
-                    let mut manager = mm_for_thread.lock().unwrap();
-                    for block in manager.memory_blocks.iter_mut() {
-                        if !block.is_empty() {
-                            // 修改首字节并读取部分数据，防止内存被回收
-                            block[0] = block[0].wrapping_add(1);
-                            let _ = block[0];
-                        }
-                    }
-                }
-                // 周期性地访问，防止长时间闲置
-
-                thread::sleep(Duration::from_secs(10));
-            }
-        });
-        
         // 每分钟检查一次是否需要调整内存
         thread::sleep(Duration::from_secs(60));
     }
