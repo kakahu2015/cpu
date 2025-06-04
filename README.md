@@ -49,3 +49,5 @@ rest_memory_usage: 20.0
 
 On December 24, 2024, between 09:00 and 18:00, the CPU usage will be set to 50% and memory usage 60%. During other times and on December 25, the CPU usage will be 10% and memory usage 20%.
 
+## License
+This project is licensed under the [MIT License](LICENSE).
