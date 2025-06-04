@@ -20,8 +20,15 @@ struct Config {
     rest_memory_usage: f64,      // 休息时间内存使用率（百分比）
 }
 
-fn parse_time(time_str: &str) -> NaiveTime {
+/*fn parse_time(time_str: &str) -> NaiveTime {
     NaiveTime::parse_from_str(time_str, "%H:%M").expect("无法解析时间格式")
+}*/
+fn parse_time(time_str: &str) -> NaiveTime {
+    NaiveTime::parse_from_str(time_str, "%H:%M")
+        .unwrap_or_else(|_| {
+            eprintln!("警告: 时间格式 '{}' 无效，使用默认值 09:00", time_str);
+            NaiveTime::from_hms_opt(9, 0, 0).unwrap()
+        })
 }
 
 fn is_work_time(config: &Config) -> bool {
