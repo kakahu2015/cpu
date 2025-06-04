@@ -375,7 +375,7 @@ rest_memory_usage: 20.0
         }
     };*/
    let config: Config = match serde_yaml::from_str::<Config>(&config_content) {
-    Ok(mut config) => {
+    Ok(config) => {
         // 校验时间格式
         parse_time(&config.work_start_time)
             .map_err(|e| format!("work_start_time {}", e))?;
