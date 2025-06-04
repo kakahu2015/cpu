@@ -184,17 +184,24 @@ impl MemoryManager {
         
         // 如果目标内存比当前使用的少，释放一些内存
         if target_mb < current_mb {
-            let blocks_to_keep = ((target_mb as f64) / (current_mb as f64) * (self.memory_blocks.len() as f64)).ceil() as usize;
-            if blocks_to_keep < self.memory_blocks.len() {
-                println!("释放内存: 从 {} 个块减少到 {} 个块", self.memory_blocks.len(), blocks_to_keep);
-                self.memory_blocks.truncate(blocks_to_keep.max(1));
+            let blocks_to_keep = ((target_mb as f64) / (current_mb as f64)
+                * (self.memory_blocks.len() as f64))
+                .ceil() as usize;
+            if target_mb == 0 {
+                println!("释放所有内存块");
+                self.memory_blocks.clear();
                 self.memory_blocks.shrink_to_fit();
-                self.current_percent = target_percent;
-                
-                // 打印释放后的内存使用情况
-                let new_mb = self.memory_blocks.iter().map(|b| b.len()).sum::<usize>() / (1024 * 1024);
-                println!("释放后内存使用量: {} MB", new_mb);
+            } else if blocks_to_keep < self.memory_blocks.len() {
+                println!("释放内存: 从 {} 个块减少到 {} 个块", self.memory_blocks.len(), blocks_to_keep);
+                self.memory_blocks.truncate(blocks_to_keep);
+                self.memory_blocks.shrink_to_fit();
             }
+
+            self.current_percent = target_percent;
+
+            // 打印释放后的内存使用情况
+            let new_mb = self.memory_blocks.iter().map(|b| b.len()).sum::<usize>() / (1024 * 1024);
+            println!("释放后内存使用量: {} MB", new_mb);
             return;
         }
 
