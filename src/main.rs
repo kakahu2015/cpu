@@ -149,7 +149,7 @@ impl MemoryManager {
     }
 
     // 将内存占用百分比转换为 MB（返回值为 MB，可考虑更名）
-    fn percent_to_bytes(&self, percent: f64) -> usize {
+    fn percent_to_mb(&self, percent: f64) -> usize {
         // 计算目标内存字节数（百分比 * 总内存）
         let target_mb = (self.system_total_memory as f64 * percent / 100.0) as usize;
         
@@ -168,7 +168,7 @@ impl MemoryManager {
         println!("调整内存使用率: {:.1}%", target_percent);
         
         // 计算目标内存使用量（MB）
-        let target_mb = self.percent_to_bytes(target_percent);
+        let target_mb = self.percent_to_mb(target_percent);
         println!("目标内存使用量: {} MB", target_mb);
         
         // 计算当前使用的内存（MB）
@@ -181,6 +181,7 @@ impl MemoryManager {
             if blocks_to_keep < self.memory_blocks.len() {
                 println!("释放内存: 从 {} 个块减少到 {} 个块", self.memory_blocks.len(), blocks_to_keep);
                 self.memory_blocks.truncate(blocks_to_keep.max(1));
+                self.memory_blocks.shrink_to_fit();
                 self.current_percent = target_percent;
                 
                 // 打印释放后的内存使用情况
