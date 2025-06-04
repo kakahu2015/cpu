@@ -28,6 +28,16 @@ fn parse_time(time_str: &str) -> Result<NaiveTime, String> {
         .map_err(|_| format!("时间格式错误: '{}' (应为 HH:MM 格式)", time_str))
 }
 
+fn clamp_percent(value: &mut f64, name: &str) {
+    if *value < 0.0 {
+        eprintln!("警告: {} {:.1}% 小于 0，已截断为 0", name, *value);
+        *value = 0.0;
+    } else if *value > 100.0 {
+        eprintln!("警告: {} {:.1}% 大于 100，已截断为 100", name, *value);
+        *value = 100.0;
+    }
+}
+
 fn is_work_time(config: &Config) -> bool {
     let now = Local::now();
     let current_time = now.time();
@@ -363,6 +373,9 @@ rest_memory_usage: 20.0
             .map_err(|e| format!("work_start_time {}", e))?;
         parse_time(&config.work_end_time)
             .map_err(|e| format!("work_end_time {}", e))?;
+
+        clamp_percent(&mut config.work_cpu_usage, "work_cpu_usage");
+        clamp_percent(&mut config.rest_cpu_usage, "rest_cpu_usage");
 
         config
     }
