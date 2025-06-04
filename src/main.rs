@@ -155,7 +155,7 @@ impl MemoryManager {
         }
     }
 
-    // 将内存占用百分比转换为 MB（返回值为 MB，可考虑更名）
+    // 将内存占用百分比转换为 MB，返回单位为 MB
     fn percent_to_mb(&self, mut percent: f64) -> usize {
         if percent < 0.0 {
             eprintln!("警告: 内存使用率 {:.1}% 小于 0，已截断为 0", percent);
