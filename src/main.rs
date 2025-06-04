@@ -23,12 +23,9 @@ struct Config {
 /*fn parse_time(time_str: &str) -> NaiveTime {
     NaiveTime::parse_from_str(time_str, "%H:%M").expect("无法解析时间格式")
 }*/
-fn parse_time(time_str: &str) -> NaiveTime {
+fn parse_time(time_str: &str) -> Result<NaiveTime, String> {
     NaiveTime::parse_from_str(time_str, "%H:%M")
-        .unwrap_or_else(|_| {
-            eprintln!("警告: 时间格式 '{}' 无效，使用默认值 09:00", time_str);
-            NaiveTime::from_hms_opt(9, 0, 0).unwrap()
-        })
+        .map_err(|_| format!("时间格式错误: '{}' (应为 HH:MM 格式)", time_str))
 }
 
 fn is_work_time(config: &Config) -> bool {
@@ -333,14 +330,29 @@ rest_memory_usage: 20.0
         }
     };
     
-    let config: Config = match serde_yaml::from_str(&config_content) {
+    /*let config: Config = match serde_yaml::from_str(&config_content) {
         Ok(config) => config,
         Err(e) => {
             println!("无法解析配置文件: {}", e);
             println!("程序退出");
             return;
         }
-    };
+    };*/
+    let config: Config = match serde_yaml::from_str(&config_content) {
+    Ok(mut config) => {
+        // 校验时间格式
+        parse_time(&config.work_start_time)
+            .map_err(|e| format!("work_start_time {}", e))?;
+        parse_time(&config.work_end_time)
+            .map_err(|e| format!("work_end_time {}", e))?;
+        
+        config
+    }
+    Err(e) => {
+        println!("配置文件错误: {}", e);
+        return;
+    }
+};
         
     println!("\n===== 配置信息 =====");
     println!("CPU 核心数: {}", num_cpus::get());
