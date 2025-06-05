@@ -36,6 +36,8 @@ cargo run --release
 The program will read the configuration from the config.yml file and adjust the CPU and memory usage based on the current time. Each CPU core will have a thread to simulate the load.
 `work_memory_usage` specifies the desired memory usage during work hours, while `rest_memory_usage` sets the memory usage for rest periods. Configure them in `config.yml` as shown below:
 
+**Note:** The simulator determines total memory by reading `/proc/meminfo`, so it currently only runs on Linux systems. If you need support for other operating systems, please consult the documentation or consider contributing patches.
+
 
 ## Example
 work_days: ["2024-12-24"]
