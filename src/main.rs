@@ -42,8 +42,7 @@ fn clamp_percent(value: &mut f64, name: &str) {
     }
 }
 
-fn is_work_time(config: &Config) -> bool {
-    let now = Local::now();
+fn is_work_time_at(config: &Config, now: chrono::DateTime<Local>) -> bool {
     let current_time = now.time();
     // 直接使用解析后的时间
     let work_start = config.work_start;
@@ -76,6 +75,11 @@ fn is_work_time(config: &Config) -> bool {
     };
     
     is_weekday && in_time_range
+}
+
+fn is_work_time(config: &Config) -> bool {
+    let now = Local::now();
+    is_work_time_at(config, now)
 }
 
 fn get_current_cpu_usage(config: &Config) -> f64 {
@@ -460,6 +464,27 @@ rest_memory_usage: 20.0
 #[cfg(test)]
 mod tests {
     use super::*;
+    use chrono::{NaiveDate, Local, TimeZone};
+
+    fn make_config(
+        work_start: &str,
+        work_end: &str,
+        work_days: Vec<String>,
+        rest_days: Vec<String>,
+    ) -> Config {
+        Config {
+            work_days,
+            rest_days,
+            work_start_time: work_start.to_string(),
+            work_end_time: work_end.to_string(),
+            work_cpu_usage: 70.0,
+            rest_cpu_usage: 10.0,
+            work_memory_usage: 70.0,
+            rest_memory_usage: 20.0,
+            work_start: parse_time(work_start).unwrap(),
+            work_end: parse_time(work_end).unwrap(),
+        }
+    }
 
     #[test]
     fn percent_to_mb_negative() {
@@ -472,5 +497,48 @@ mod tests {
         let mm = MemoryManager::new();
         let expected = mm.percent_to_mb(100.0);
         assert_eq!(mm.percent_to_mb(150.0), expected);
+    }
+
+    #[test]
+    fn workday_detection() {
+        let config = make_config("09:00", "18:00", vec![], vec![]);
+        let date = NaiveDate::from_ymd_opt(2024, 10, 21).unwrap(); // Monday
+        let dt_in = Local.from_local_datetime(&date.and_hms_opt(10, 0, 0).unwrap()).unwrap();
+        assert!(is_work_time_at(&config, dt_in));
+
+        let dt_out = Local.from_local_datetime(&date.and_hms_opt(20, 0, 0).unwrap()).unwrap();
+        assert!(!is_work_time_at(&config, dt_out));
+    }
+
+    #[test]
+    fn rest_day_detection() {
+        let config = make_config(
+            "09:00",
+            "18:00",
+            vec![],
+            vec!["2024-10-21".to_string()],
+        );
+        let date = NaiveDate::from_ymd_opt(2024, 10, 21).unwrap();
+        let dt = Local.from_local_datetime(&date.and_hms_opt(10, 0, 0).unwrap()).unwrap();
+        assert!(!is_work_time_at(&config, dt));
+    }
+
+    #[test]
+    fn cross_midnight_detection() {
+        let config = make_config("22:00", "06:00", vec![], vec![]);
+
+        // Monday 23:00 should be work time
+        let mon = NaiveDate::from_ymd_opt(2024, 10, 21).unwrap();
+        let dt_mon = Local.from_local_datetime(&mon.and_hms_opt(23, 0, 0).unwrap()).unwrap();
+        assert!(is_work_time_at(&config, dt_mon));
+
+        // Tuesday 05:00 should still be work time
+        let tue = NaiveDate::from_ymd_opt(2024, 10, 22).unwrap();
+        let dt_tue = Local.from_local_datetime(&tue.and_hms_opt(5, 0, 0).unwrap()).unwrap();
+        assert!(is_work_time_at(&config, dt_tue));
+
+        // Tuesday 07:00 should be rest time
+        let dt_after = Local.from_local_datetime(&tue.and_hms_opt(7, 0, 0).unwrap()).unwrap();
+        assert!(!is_work_time_at(&config, dt_after));
     }
 }
