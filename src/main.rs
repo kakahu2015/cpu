@@ -98,11 +98,14 @@ fn get_current_memory_usage(config: &Config) -> f64 {
     }
 }
 
-fn cpu_load(config: &Config) {
+fn cpu_load(config: Arc<Mutex<Config>>) {
     let cycle_duration = Duration::from_millis(100);
-    
+
     loop {
-        let cpu_usage = get_current_cpu_usage(config);
+        let cpu_usage = {
+            let cfg = config.lock().unwrap();
+            get_current_cpu_usage(&cfg)
+        };
         let work_ratio = cpu_usage / 100.0;
         let sleep_ratio = 1.0 - work_ratio;
         
@@ -436,14 +439,11 @@ rest_memory_usage: 20.0
     // 启动 CPU 负载线程
     let mut handles = vec![];
     for i in 0..num_cpus::get() {
-        let config_clone = {
-            let config = shared_config.lock().unwrap();
-            config.clone()
-        };
-        
+        let config_clone = Arc::clone(&shared_config);
+
         let handle = thread::spawn(move || {
             println!("启动 CPU 负载线程，核心 #{}", i);
-            cpu_load(&config_clone);
+            cpu_load(config_clone);
         });
         
         handles.push(handle);
