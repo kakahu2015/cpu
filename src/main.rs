@@ -111,7 +111,8 @@ fn cpu_load(config: Arc<Mutex<Config>>) {
         
         let work_duration = Duration::from_secs_f64(cycle_duration.as_secs_f64() * work_ratio);
         let sleep_duration = Duration::from_secs_f64(cycle_duration.as_secs_f64() * sleep_ratio);
-        
+        let min_sleep = Duration::from_millis(1);
+        thread::sleep(sleep_duration.max(min_sleep));
         let start = Instant::now();
         while start.elapsed() < work_duration {
             let mut x: f64 = 0.0;
@@ -393,6 +394,8 @@ rest_memory_usage: 20.0
 
         clamp_percent(&mut config.work_cpu_usage, "work_cpu_usage");
         clamp_percent(&mut config.rest_cpu_usage, "rest_cpu_usage");
+        clamp_percent(&mut config.work_memory_usage, "work_memory_usage");  // 添加这行
+        clamp_percent(&mut config.rest_memory_usage, "rest_memory_usage");  // 添加这行
 
         config
     }
@@ -455,7 +458,11 @@ rest_memory_usage: 20.0
     // 等待所有线程完成
     handles.push(memory_handle);
     for handle in handles {
-        handle.join().unwrap();
+          //handle.join().unwrap();
+          if let Err(e) = handle.join() {
+            eprintln!("线程意外退出: {:?}", e);
+          }
+        
     }
 
     Ok(())
