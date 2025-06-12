@@ -247,31 +247,71 @@ impl MemoryManager {
     }
 
 
-     fn adjust_memory_usage(&mut self, target_percent: f64) {
-        let target_mb = self.percent_to_mb(target_percent);
-        let current_mb = self.memory_blocks.iter().map(|b| b.len()).sum::<usize>() / (1024 * 1024);
-        
-        if target_mb < current_mb {
-            // 优化：逐步释放，减少碎片
-            while self.current_memory_mb() > target_mb && !self.memory_blocks.is_empty() {
-                self.memory_blocks.pop(); // 从末尾释放
-            }
-        } else if target_mb > current_mb {
-            let additional_mb = target_mb - current_mb;
-            
-            // 优化：自适应块大小
-            let block_size = if additional_mb < 256 { 64 } 
-                           else if additional_mb < 1024 { 128 }
-                           else { 256 }; // 不再用512MB大块
-            
-            let blocks_needed = (additional_mb + block_size - 1) / block_size;
-            
-            for _ in 0..blocks_needed {
-                let block = vec![0u8; block_size * 1024 * 1024];
-                self.memory_blocks.push(block);
+    fn adjust_memory_usage(&mut self, target_percent: f64) {
+    println!("调整内存使用率: {:.1}%", target_percent);
+    
+    let target_mb = self.percent_to_mb(target_percent);
+    let current_mb = self.memory_blocks.iter().map(|b| b.len()).sum::<usize>() / (1024 * 1024);
+    
+    println!("目标内存使用量: {} MB", target_mb);
+    println!("当前内存使用量: {} MB", current_mb);
+    
+    if target_mb < current_mb {
+        // 优化：逐步释放，减少碎片
+        while current_mb > target_mb && !self.memory_blocks.is_empty() {
+            self.memory_blocks.pop(); // 从末尾释放
+            let new_current_mb = self.memory_blocks.iter().map(|b| b.len()).sum::<usize>() / (1024 * 1024);
+            if new_current_mb <= target_mb {
+                break;
             }
         }
+        println!("释放后内存使用量: {} MB", 
+                self.memory_blocks.iter().map(|b| b.len()).sum::<usize>() / (1024 * 1024));
+        
+    } else if target_mb > current_mb {
+        let additional_mb = target_mb - current_mb;
+        
+        // 优化：自适应块大小
+        let block_size = if additional_mb < 256 { 64 } 
+                       else if additional_mb < 1024 { 128 }
+                       else { 256 }; // 不再用512MB大块
+        
+        let blocks_needed = (additional_mb + block_size - 1) / block_size;
+        println!("需要添加 {} 个内存块，每块 {} MB", blocks_needed, block_size);
+        
+        for i in 0..blocks_needed {
+            // 创建并填充内存块
+            let mut block = Vec::with_capacity(block_size * 1024 * 1024);
+            let block_bytes = block_size * 1024 * 1024;
+            
+            // 填充真实数据
+            for chunk_start in (0..block_bytes).step_by(self.random_data.len()) {
+                let remaining = block_bytes - chunk_start;
+                let chunk_size = remaining.min(self.random_data.len());
+                block.extend_from_slice(&self.random_data[0..chunk_size]);
+            }
+            
+            // 确保内存实际被访问
+            for chunk_start in (0..block.len()).step_by(1024*1024) {
+                let end = (chunk_start + 1000).min(block.len());
+                for j in chunk_start..end {
+                    block[j] = block[j].wrapping_add(1);
+                }
+            }
+            
+            self.memory_blocks.push(block);
+            
+            if i % 5 == 0 || i == blocks_needed - 1 {
+                println!("已添加 {} 个内存块中的 {} 个", blocks_needed, i + 1);
+            }
+        }
+        
+        println!("分配后内存使用量: {} MB", 
+                self.memory_blocks.iter().map(|b| b.len()).sum::<usize>() / (1024 * 1024));
     }
+    
+    self.current_percent = target_percent;
+}
     // 调整内存使用百分比 - 优化版本
    /* fn adjust_memory_usage(&mut self, target_percent: f64) {
         println!("调整内存使用率: {:.1}%", target_percent);
