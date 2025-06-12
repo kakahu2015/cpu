@@ -98,7 +98,7 @@ fn get_current_memory_usage(config: &Config) -> f64 {
     }
 }
 
-fn cpu_load(config: Arc<Mutex<Config>>) {
+/*fn cpu_load(config: Arc<Mutex<Config>>) {
     let cycle_duration = Duration::from_millis(100);
 
     loop {
@@ -126,7 +126,50 @@ fn cpu_load(config: Arc<Mutex<Config>>) {
         let min_sleep = Duration::from_millis(1);
         thread::sleep(sleep_duration.max(min_sleep));
     }
+}*/
+
+fn cpu_load(config: Arc<Mutex<Config>>) {
+    loop {
+        let cycle_start = Instant::now();
+        let cycle_duration = Duration::from_millis(10); // 更细粒度：10ms而不是100ms
+        
+        let cpu_usage = {
+            let cfg = config.lock().unwrap();
+            get_current_cpu_usage(&cfg)
+        };
+        
+        let work_ratio = cpu_usage / 100.0;
+        let target_work_duration = Duration::from_secs_f64(cycle_duration.as_secs_f64() * work_ratio);
+        
+        if work_ratio > 0.0 {
+            // 工作阶段：更密集更高效的CPU计算
+            let work_start = Instant::now();
+            while work_start.elapsed() < target_work_duration {
+                // 更消耗CPU的数学运算组合
+                let mut x = 1.0f64;
+                for _ in 0..5000 {
+                    x = x.powi(2).sqrt().sin().cos().tan().exp().ln();
+                }
+                // 防止编译器优化掉无用计算
+                std::hint::black_box(x);
+            }
+        }
+        
+        // 计算剩余睡眠时间
+        let elapsed = cycle_start.elapsed();
+        let sleep_time = cycle_duration.saturating_sub(elapsed);
+        
+        // 确保最少睡眠100微秒，避免系统无响应
+        if sleep_time > Duration::from_micros(100) {
+            thread::sleep(sleep_time);
+        } else {
+            thread::sleep(Duration::from_micros(100));
+        }
+    }
 }
+
+
+    
 
 
 
@@ -203,8 +246,34 @@ impl MemoryManager {
         safe_mb.min(max_usable_mb)
     }
 
+
+     fn adjust_memory_usage(&mut self, target_percent: f64) {
+        let target_mb = self.percent_to_mb(target_percent);
+        let current_mb = self.memory_blocks.iter().map(|b| b.len()).sum::<usize>() / (1024 * 1024);
+        
+        if target_mb < current_mb {
+            // 优化：逐步释放，减少碎片
+            while self.current_memory_mb() > target_mb && !self.memory_blocks.is_empty() {
+                self.memory_blocks.pop(); // 从末尾释放
+            }
+        } else if target_mb > current_mb {
+            let additional_mb = target_mb - current_mb;
+            
+            // 优化：自适应块大小
+            let block_size = if additional_mb < 256 { 64 } 
+                           else if additional_mb < 1024 { 128 }
+                           else { 256 }; // 不再用512MB大块
+            
+            let blocks_needed = (additional_mb + block_size - 1) / block_size;
+            
+            for _ in 0..blocks_needed {
+                let block = vec![0u8; block_size * 1024 * 1024];
+                self.memory_blocks.push(block);
+            }
+        }
+    }
     // 调整内存使用百分比 - 优化版本
-    fn adjust_memory_usage(&mut self, target_percent: f64) {
+   /* fn adjust_memory_usage(&mut self, target_percent: f64) {
         println!("调整内存使用率: {:.1}%", target_percent);
         
         // 计算目标内存使用量（MB）
@@ -292,7 +361,7 @@ impl MemoryManager {
             let new_mb = self.memory_blocks.iter().map(|b| b.len()).sum::<usize>() / (1024 * 1024);
             println!("分配后内存使用量: {} MB", new_mb);
         }
-    }
+    }*/
 }
 
 fn memory_load(config: Arc<Mutex<Config>>, memory_manager: Arc<Mutex<MemoryManager>>) {
