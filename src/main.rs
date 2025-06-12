@@ -111,8 +111,8 @@ fn cpu_load(config: Arc<Mutex<Config>>) {
         
         let work_duration = Duration::from_secs_f64(cycle_duration.as_secs_f64() * work_ratio);
         let sleep_duration = Duration::from_secs_f64(cycle_duration.as_secs_f64() * sleep_ratio);
-        let min_sleep = Duration::from_millis(1);
-        thread::sleep(sleep_duration.max(min_sleep));
+        
+        // 第一步：先进行CPU计算（工作阶段）
         let start = Instant::now();
         while start.elapsed() < work_duration {
             let mut x: f64 = 0.0;
@@ -122,16 +122,13 @@ fn cpu_load(config: Arc<Mutex<Config>>) {
             }
         }
         
-        thread::sleep(sleep_duration);
+        // 第二步：然后睡眠（休息阶段），确保最少睡眠1毫秒防止100%CPU时系统无响应
+        let min_sleep = Duration::from_millis(1);
+        thread::sleep(sleep_duration.max(min_sleep));
     }
 }
 
-// 获取系统总内存大小（以 MB 为单位）- 假设值
-/*fn get_system_total_memory() -> u64 {
-    // 这里我们可以从 /proc/meminfo 中读取实际的系统内存
-    // 但为简单起见，假设系统有 24GB 内存（根据您的截图）
-    24 * 1024  // 24GB 转换为 MB
-}*/
+
 
 // 简洁且高效的 Linux 版本
 fn get_system_total_memory() -> u64 {
