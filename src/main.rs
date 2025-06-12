@@ -246,7 +246,7 @@ impl MemoryManager {
         safe_mb.min(max_usable_mb)
     }
 
-
+////////////////////////////////////////////////////////////////////////////
     fn adjust_memory_usage(&mut self, target_percent: f64) {
     println!("调整内存使用率: {:.1}%", target_percent);
     
@@ -257,7 +257,7 @@ impl MemoryManager {
     println!("当前内存使用量: {} MB", current_mb);
     
     if target_mb < current_mb {
-        // 优化：逐步释放，减少碎片
+        // 需要释放内存
         while current_mb > target_mb && !self.memory_blocks.is_empty() {
             self.memory_blocks.pop(); // 从末尾释放
             let new_current_mb = self.memory_blocks.iter().map(|b| b.len()).sum::<usize>() / (1024 * 1024);
@@ -265,16 +265,17 @@ impl MemoryManager {
                 break;
             }
         }
-        println!("释放后内存使用量: {} MB", 
-                self.memory_blocks.iter().map(|b| b.len()).sum::<usize>() / (1024 * 1024));
+        let final_mb = self.memory_blocks.iter().map(|b| b.len()).sum::<usize>() / (1024 * 1024);
+        println!("释放后内存使用量: {} MB", final_mb);
         
     } else if target_mb > current_mb {
+        // 需要分配更多内存
         let additional_mb = target_mb - current_mb;
         
-        // 优化：自适应块大小
+        // 自适应块大小
         let block_size = if additional_mb < 256 { 64 } 
                        else if additional_mb < 1024 { 128 }
-                       else { 256 }; // 不再用512MB大块
+                       else { 256 };
         
         let blocks_needed = (additional_mb + block_size - 1) / block_size;
         println!("需要添加 {} 个内存块，每块 {} MB", blocks_needed, block_size);
@@ -284,14 +285,14 @@ impl MemoryManager {
             let mut block = Vec::with_capacity(block_size * 1024 * 1024);
             let block_bytes = block_size * 1024 * 1024;
             
-            // 填充真实数据
+            // 用真实数据填充
             for chunk_start in (0..block_bytes).step_by(self.random_data.len()) {
                 let remaining = block_bytes - chunk_start;
                 let chunk_size = remaining.min(self.random_data.len());
                 block.extend_from_slice(&self.random_data[0..chunk_size]);
             }
             
-            // 确保内存实际被访问
+            // 确保内存被实际使用
             for chunk_start in (0..block.len()).step_by(1024*1024) {
                 let end = (chunk_start + 1000).min(block.len());
                 for j in chunk_start..end {
@@ -304,104 +305,20 @@ impl MemoryManager {
             if i % 5 == 0 || i == blocks_needed - 1 {
                 println!("已添加 {} 个内存块中的 {} 个", blocks_needed, i + 1);
             }
+            
+            // 每10个块暂停一下
+            if i % 10 == 9 {
+                thread::sleep(Duration::from_millis(100));
+            }
         }
         
-        println!("分配后内存使用量: {} MB", 
-                self.memory_blocks.iter().map(|b| b.len()).sum::<usize>() / (1024 * 1024));
+        let final_mb = self.memory_blocks.iter().map(|b| b.len()).sum::<usize>() / (1024 * 1024);
+        println!("分配后内存使用量: {} MB", final_mb);
     }
     
     self.current_percent = target_percent;
 }
-    // 调整内存使用百分比 - 优化版本
-   /* fn adjust_memory_usage(&mut self, target_percent: f64) {
-        println!("调整内存使用率: {:.1}%", target_percent);
-        
-        // 计算目标内存使用量（MB）
-        let target_mb = self.percent_to_mb(target_percent);
-        println!("目标内存使用量: {} MB", target_mb);
-        
-        // 计算当前使用的内存（MB）
-        let current_mb = self.memory_blocks.iter().map(|b| b.len()).sum::<usize>() / (1024 * 1024);
-        println!("当前内存使用量: {} MB", current_mb);
-        
-        // 如果目标内存比当前使用的少，释放一些内存
-        if target_mb < current_mb {
-            let blocks_to_keep = ((target_mb as f64) / (current_mb as f64)
-                * (self.memory_blocks.len() as f64))
-                .ceil() as usize;
-            if target_mb == 0 {
-                println!("释放所有内存块");
-                self.memory_blocks.clear();
-                self.memory_blocks.shrink_to_fit();
-            } else if blocks_to_keep < self.memory_blocks.len() {
-                println!("释放内存: 从 {} 个块减少到 {} 个块", self.memory_blocks.len(), blocks_to_keep);
-                self.memory_blocks.truncate(blocks_to_keep);
-                self.memory_blocks.shrink_to_fit();
-            }
-
-            self.current_percent = target_percent;
-
-            // 打印释放后的内存使用情况
-            let new_mb = self.memory_blocks.iter().map(|b| b.len()).sum::<usize>() / (1024 * 1024);
-            println!("释放后内存使用量: {} MB", new_mb);
-            return;
-        }
-
-        // 如果需要分配更多内存
-        if target_mb > current_mb {
-            let additional_mb = target_mb - current_mb;
-            
-            // 使用较大的块以减少分配次数，提高效率
-            const BLOCK_SIZE_MB: usize = 512;  // 使用更大的块
-            let blocks_to_add = (additional_mb + BLOCK_SIZE_MB - 1) / BLOCK_SIZE_MB;
-            
-            println!("需要添加 {} 个内存块，每块 {} MB", blocks_to_add, BLOCK_SIZE_MB);
-            
-            // 预分配大数组
-            for i in 0..blocks_to_add {
-                if i % 5 == 0 || i == blocks_to_add - 1 {
-                    println!("已添加 {} 个内存块中的 {} 个 ({:.1}%)...", 
-                             blocks_to_add, i+1, (i+1) as f64 / blocks_to_add as f64 * 100.0);
-                }
-                
-                // 创建一个新的内存块
-                let mut block = Vec::with_capacity(BLOCK_SIZE_MB * 1024 * 1024);
-                
-                // 使用真实数据填充它（重要）
-                // 这种方法会创建真实的内存分配，不太可能被优化掉
-                let block_size = BLOCK_SIZE_MB * 1024 * 1024;
-                
-                // 填充内存块
-                for chunk_start in (0..block_size).step_by(self.random_data.len()) {
-                    let remaining = block_size - chunk_start;
-                    let chunk_size = remaining.min(self.random_data.len());
-                    block.extend_from_slice(&self.random_data[0..chunk_size]);
-                }
-                
-                // 确保内存实际被分配
-                for chunk_start in (0..block.len()).step_by(1024*1024) {
-                    let end = (chunk_start + 1000).min(block.len());
-                    // 修改部分数据以确保它被访问
-                    for i in chunk_start..end {
-                        block[i] = block[i].wrapping_add(1);
-                    }
-                }
-                
-                self.memory_blocks.push(block);
-                
-                // 短暂停顿，让系统有时间处理
-                if i % 10 == 9 {
-                    thread::sleep(Duration::from_millis(100));
-                }
-            }
-            
-            self.current_percent = target_percent;
-            
-            // 打印分配后的内存使用情况
-            let new_mb = self.memory_blocks.iter().map(|b| b.len()).sum::<usize>() / (1024 * 1024);
-            println!("分配后内存使用量: {} MB", new_mb);
-        }
-    }*/
+ //////////////////////////////////////////////////////////////////////////
 }
 
 fn memory_load(config: Arc<Mutex<Config>>, memory_manager: Arc<Mutex<MemoryManager>>) {
