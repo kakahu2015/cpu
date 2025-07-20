@@ -8,6 +8,19 @@ use num_cpus;
 use chrono::{Local, NaiveTime, Weekday};
 use std::process;
 
+// 常量定义
+const CPU_CYCLE_DURATION_MS: u64 = 10;
+const MIN_SLEEP_MICROS: u64 = 100;
+const MEMORY_CHECK_INTERVAL_SECS: u64 = 60;
+const MEMORY_KEEP_ALIVE_INTERVAL_SECS: u64 = 10;
+const SYSTEM_RESERVE_RATIO: f64 = 0.8;
+const MIN_SYSTEM_RESERVE_MB: usize = 1024;
+const RANDOM_DATA_SIZE: usize = 1024 * 1024;
+const MEMORY_BLOCK_SIZES: [usize; 3] = [64, 128, 256];
+const BATCH_PROGRESS_INTERVAL: usize = 5;
+const BATCH_PAUSE_INTERVAL: usize = 10;
+const BATCH_PAUSE_DURATION_MS: u64 = 100;
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 struct Config {
     work_days: Vec<String>,      // 指定工作日列表 格式："2025-01-01"
@@ -24,9 +37,6 @@ struct Config {
     work_end: NaiveTime,         // 解析后的工作结束时间
 }
 
-/*fn parse_time(time_str: &str) -> NaiveTime {
-    NaiveTime::parse_from_str(time_str, "%H:%M").expect("无法解析时间格式")
-}*/
 fn parse_time(time_str: &str) -> Result<NaiveTime, String> {
     NaiveTime::parse_from_str(time_str, "%H:%M")
         .map_err(|_| format!("时间格式错误: '{}' (应为 HH:MM 格式)", time_str))
@@ -98,40 +108,11 @@ fn get_current_memory_usage(config: &Config) -> f64 {
     }
 }
 
-/*fn cpu_load(config: Arc<Mutex<Config>>) {
-    let cycle_duration = Duration::from_millis(100);
-
-    loop {
-        let cpu_usage = {
-            let cfg = config.lock().unwrap();
-            get_current_cpu_usage(&cfg)
-        };
-        let work_ratio = cpu_usage / 100.0;
-        let sleep_ratio = 1.0 - work_ratio;
-        
-        let work_duration = Duration::from_secs_f64(cycle_duration.as_secs_f64() * work_ratio);
-        let sleep_duration = Duration::from_secs_f64(cycle_duration.as_secs_f64() * sleep_ratio);
-        
-        // 第一步：先进行CPU计算（工作阶段）
-        let start = Instant::now();
-        while start.elapsed() < work_duration {
-            let mut x: f64 = 0.0;
-            for _ in 0..1000 {
-                x += 1.0;
-                x = x.sqrt();
-            }
-        }
-        
-        // 第二步：然后睡眠（休息阶段），确保最少睡眠1毫秒防止100%CPU时系统无响应
-        let min_sleep = Duration::from_millis(1);
-        thread::sleep(sleep_duration.max(min_sleep));
-    }
-}*/
 
 fn cpu_load(config: Arc<Mutex<Config>>) {
     loop {
         let cycle_start = Instant::now();
-        let cycle_duration = Duration::from_millis(10); // 更细粒度：10ms而不是100ms
+        let cycle_duration = Duration::from_millis(CPU_CYCLE_DURATION_MS);
         
         let cpu_usage = {
             let cfg = config.lock().unwrap();
@@ -142,28 +123,23 @@ fn cpu_load(config: Arc<Mutex<Config>>) {
         let target_work_duration = Duration::from_secs_f64(cycle_duration.as_secs_f64() * work_ratio);
         
         if work_ratio > 0.0 {
-            // 工作阶段：更密集更高效的CPU计算
             let work_start = Instant::now();
             while work_start.elapsed() < target_work_duration {
-                // 更消耗CPU的数学运算组合
                 let mut x = 1.0f64;
                 for _ in 0..5000 {
                     x = x.powi(2).sqrt().sin().cos().tan().exp().ln();
                 }
-                // 防止编译器优化掉无用计算
                 std::hint::black_box(x);
             }
         }
         
-        // 计算剩余睡眠时间
         let elapsed = cycle_start.elapsed();
         let sleep_time = cycle_duration.saturating_sub(elapsed);
         
-        // 确保最少睡眠100微秒，避免系统无响应
-        if sleep_time > Duration::from_micros(100) {
+        if sleep_time > Duration::from_micros(MIN_SLEEP_MICROS) {
             thread::sleep(sleep_time);
         } else {
-            thread::sleep(Duration::from_micros(100));
+            thread::sleep(Duration::from_micros(MIN_SLEEP_MICROS));
         }
     }
 }
@@ -209,9 +185,9 @@ impl MemoryManager {
     fn new() -> Self {
         let system_total_memory = get_system_total_memory();
         
-        // 生成1MB的随机数据
-        let mut random_data = Vec::with_capacity(1024 * 1024);
-        for i in 0..1024*1024 {
+        // 生成随机数据
+        let mut random_data = Vec::with_capacity(RANDOM_DATA_SIZE);
+        for i in 0..RANDOM_DATA_SIZE {
             random_data.push((i % 256) as u8);
         }
         
@@ -236,89 +212,100 @@ impl MemoryManager {
         // 计算目标内存字节数（百分比 * 总内存）
         let target_mb = (self.system_total_memory as f64 * percent / 100.0) as usize;
         
-        // 预留 20% 给系统和其他程序，以避免影响系统稳定性
-        let safe_mb = (target_mb as f64 * 0.8) as usize;
+        // 预留给系统和其他程序，以避免影响系统稳定性
+        let safe_mb = (target_mb as f64 * SYSTEM_RESERVE_RATIO) as usize;
         
-        // 确保至少保留 1GB 给系统
-        let min_system_reserve = 1024;
-        let max_usable_mb = (self.system_total_memory as usize).saturating_sub(min_system_reserve);
+        // 确保至少保留给系统
+        let max_usable_mb = (self.system_total_memory as usize).saturating_sub(MIN_SYSTEM_RESERVE_MB);
         
         safe_mb.min(max_usable_mb)
     }
 
-////////////////////////////////////////////////////////////////////////////
     fn adjust_memory_usage(&mut self, target_percent: f64) {
-    println!("调整内存使用率: {:.1}%", target_percent);
-    
-    let target_mb = self.percent_to_mb(target_percent);
-    let current_mb = self.memory_blocks.iter().map(|b| b.len()).sum::<usize>() / (1024 * 1024);
-    
-    println!("目标内存使用量: {} MB", target_mb);
-    println!("当前内存使用量: {} MB", current_mb);
-    
-    if target_mb < current_mb {
-        // 需要释放内存
-        while current_mb > target_mb && !self.memory_blocks.is_empty() {
-            self.memory_blocks.pop(); // 从末尾释放
-            let new_current_mb = self.memory_blocks.iter().map(|b| b.len()).sum::<usize>() / (1024 * 1024);
-            if new_current_mb <= target_mb {
-                break;
-            }
+        println!("调整内存使用率: {:.1}%", target_percent);
+        
+        let target_mb = self.percent_to_mb(target_percent);
+        let current_mb = self.get_current_memory_mb();
+        
+        println!("目标内存使用量: {} MB", target_mb);
+        println!("当前内存使用量: {} MB", current_mb);
+        
+        match target_mb.cmp(&current_mb) {
+            std::cmp::Ordering::Less => self.release_memory_to_target(target_mb),
+            std::cmp::Ordering::Greater => self.allocate_memory_to_target(target_mb, current_mb),
+            std::cmp::Ordering::Equal => {}
         }
-        let final_mb = self.memory_blocks.iter().map(|b| b.len()).sum::<usize>() / (1024 * 1024);
+        
+        self.current_percent = target_percent;
+    }
+
+    fn get_current_memory_mb(&self) -> usize {
+        self.memory_blocks.iter().map(|b| b.len()).sum::<usize>() / (1024 * 1024)
+    }
+
+    fn release_memory_to_target(&mut self, target_mb: usize) {
+        while self.get_current_memory_mb() > target_mb && !self.memory_blocks.is_empty() {
+            self.memory_blocks.pop();
+        }
+        let final_mb = self.get_current_memory_mb();
         println!("释放后内存使用量: {} MB", final_mb);
-        
-    } else if target_mb > current_mb {
-        // 需要分配更多内存
+    }
+
+    fn allocate_memory_to_target(&mut self, target_mb: usize, current_mb: usize) {
         let additional_mb = target_mb - current_mb;
-        
-        // 自适应块大小
-        let block_size = if additional_mb < 256 { 64 } 
-                       else if additional_mb < 1024 { 128 }
-                       else { 256 };
-        
+        let block_size = self.calculate_block_size(additional_mb);
         let blocks_needed = (additional_mb + block_size - 1) / block_size;
+        
         println!("需要添加 {} 个内存块，每块 {} MB", blocks_needed, block_size);
         
         for i in 0..blocks_needed {
-            // 创建并填充内存块
-            let mut block = Vec::with_capacity(block_size * 1024 * 1024);
-            let block_bytes = block_size * 1024 * 1024;
-            
-            // 用真实数据填充
-            for chunk_start in (0..block_bytes).step_by(self.random_data.len()) {
-                let remaining = block_bytes - chunk_start;
-                let chunk_size = remaining.min(self.random_data.len());
-                block.extend_from_slice(&self.random_data[0..chunk_size]);
-            }
-            
-            // 确保内存被实际使用
-            for chunk_start in (0..block.len()).step_by(1024*1024) {
-                let end = (chunk_start + 1000).min(block.len());
-                for j in chunk_start..end {
-                    block[j] = block[j].wrapping_add(1);
-                }
-            }
-            
+            let block = self.create_memory_block(block_size);
             self.memory_blocks.push(block);
             
-            if i % 5 == 0 || i == blocks_needed - 1 {
+            if i % BATCH_PROGRESS_INTERVAL == 0 || i == blocks_needed - 1 {
                 println!("已添加 {} 个内存块中的 {} 个", blocks_needed, i + 1);
             }
             
-            // 每10个块暂停一下
-            if i % 10 == 9 {
-                thread::sleep(Duration::from_millis(100));
+            if i % BATCH_PAUSE_INTERVAL == BATCH_PAUSE_INTERVAL - 1 {
+                thread::sleep(Duration::from_millis(BATCH_PAUSE_DURATION_MS));
             }
         }
         
-        let final_mb = self.memory_blocks.iter().map(|b| b.len()).sum::<usize>() / (1024 * 1024);
+        let final_mb = self.get_current_memory_mb();
         println!("分配后内存使用量: {} MB", final_mb);
     }
-    
-    self.current_percent = target_percent;
-}
- //////////////////////////////////////////////////////////////////////////
+
+    fn calculate_block_size(&self, additional_mb: usize) -> usize {
+        if additional_mb < 256 { 
+            MEMORY_BLOCK_SIZES[0] 
+        } else if additional_mb < 1024 { 
+            MEMORY_BLOCK_SIZES[1] 
+        } else { 
+            MEMORY_BLOCK_SIZES[2] 
+        }
+    }
+
+    fn create_memory_block(&self, size_mb: usize) -> Vec<u8> {
+        let mut block = Vec::with_capacity(size_mb * 1024 * 1024);
+        let block_bytes = size_mb * 1024 * 1024;
+        
+        // 用真实数据填充
+        for chunk_start in (0..block_bytes).step_by(self.random_data.len()) {
+            let remaining = block_bytes - chunk_start;
+            let chunk_size = remaining.min(self.random_data.len());
+            block.extend_from_slice(&self.random_data[0..chunk_size]);
+        }
+        
+        // 确保内存被实际使用
+        for chunk_start in (0..block.len()).step_by(1024*1024) {
+            let end = (chunk_start + 1000).min(block.len());
+            for j in chunk_start..end {
+                block[j] = block[j].wrapping_add(1);
+            }
+        }
+        
+        block
+    }
 }
 
 fn memory_load(config: Arc<Mutex<Config>>, memory_manager: Arc<Mutex<MemoryManager>>) {
@@ -342,8 +329,8 @@ fn memory_load(config: Arc<Mutex<Config>>, memory_manager: Arc<Mutex<MemoryManag
                     }
                 }
             }
-            // 每10秒访问一次内存
-            thread::sleep(Duration::from_secs(10));
+            // 定期访问内存
+            thread::sleep(Duration::from_secs(MEMORY_KEEP_ALIVE_INTERVAL_SECS));
         }
     });
     
@@ -370,8 +357,8 @@ fn memory_load(config: Arc<Mutex<Config>>, memory_manager: Arc<Mutex<MemoryManag
         }
         
 
-        // 每分钟检查一次是否需要调整内存
-        thread::sleep(Duration::from_secs(60));
+        // 定期检查是否需要调整内存
+        thread::sleep(Duration::from_secs(MEMORY_CHECK_INTERVAL_SECS));
     }
 }
 
@@ -399,14 +386,6 @@ rest_memory_usage: 20.0
         }
     };
     
-    /*let config: Config = match serde_yaml::from_str(&config_content) {
-        Ok(config) => config,
-        Err(e) => {
-            println!("无法解析配置文件: {}", e);
-            println!("程序退出");
-            return;
-        }
-    };*/
    let config: Config = match serde_yaml::from_str::<Config>(&config_content) {
     Ok(mut config) => {
         // 校验时间格式并存储解析结果
