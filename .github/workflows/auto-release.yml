@@ -1,0 +1,69 @@
+name: Auto Multi-Arch Release
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build (${{ matrix.target }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-musl
+            asset_suffix: linux-x86_64
+          - target: aarch64-unknown-linux-musl
+            asset_suffix: linux-arm64
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install cross tool
+        run: cargo install cross --git https://github.com/cross-rs/cross
+
+      - name: Build release binary
+        run: cross build --release --target ${{ matrix.target }}
+
+      - name: Prepare artifact
+        run: |
+          cp target/${{ matrix.target }}/release/cpu_usage cpu_usage-${{ matrix.asset_suffix }}
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: cpu_usage-${{ matrix.asset_suffix }}
+          path: cpu_usage-${{ matrix.asset_suffix }}
+
+  release:
+    name: Create GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+
+      - name: Generate release metadata
+        id: meta
+        run: |
+          TAG="auto-${GITHUB_RUN_NUMBER}-${GITHUB_SHA::7}"
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+
+      - name: Create release and upload assets
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.meta.outputs.tag }}
+          name: Auto Release ${{ steps.meta.outputs.tag }}
+          generate_release_notes: true
+          files: |
+            dist/cpu_usage-linux-x86_64/cpu_usage-linux-x86_64
+            dist/cpu_usage-linux-arm64/cpu_usage-linux-arm64

@@ -8,6 +8,7 @@ This project is a CPU load simulator that adjusts the CPU usage based on the con
 - Supports custom workdays and rest days.
 - Multi-threaded CPU load simulation, supporting multi-core CPUs.
 - Simulates memory usage during work and rest periods using `work_memory_usage` and `rest_memory_usage`.
+- Supports graceful shutdown via `Ctrl+C` so worker threads can exit cleanly.
 
 ## Installation
 
@@ -32,6 +33,8 @@ rest_cpu_usage: 10.0              # CPU usage during rest hours (%)
 ## Usage
 Run the following command to start the program:
 cargo run --release
+
+Stop with `Ctrl+C` to trigger graceful shutdown.
 
 The program will read the configuration from the config.yml file and adjust the CPU and memory usage based on the current time. Each CPU core will have a thread to simulate the load.
 `work_memory_usage` specifies the desired memory usage during work hours, while `rest_memory_usage` sets the memory usage for rest periods. Configure them in `config.yml` as shown below:
